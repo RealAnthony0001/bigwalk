@@ -44,6 +44,7 @@
   #wagon { position: absolute; inset: 0; z-index: 1200; overflow: auto; background: var(--bg); padding: 16px; display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; align-items: start }
   #wagon[hidden] { display: none }
   .sg { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px }
+  .sg .stat:last-child:nth-child(odd) { grid-column: 1 / -1 }
   .stat { border: 1px solid var(--line2); background: var(--panel); padding: 8px 12px }
   .stat b { display: block; font: 800 26px/1.2 var(--mono); color: var(--accent) }
   .stat span, .lh { font: 12px var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--muted) }
@@ -225,8 +226,7 @@
       return `<div class="ln"><i style="background:${LINES[k].c}">${k}</i><span>${v} / ${ix.length}${v == ix.length ? ' ✓' : ''}</span><span>${Math.round(v / ix.length * 100)}%</span><div class="prog"><i style="width:${v / ix.length * 100}%;background:${LINES[k].c}"></i></div></div>`;
     }).join('');
     const left = Object.keys(LINES).map(k => { const m = LINES[k].s.filter(x => !V[STATIONS.findIndex(s => s[0] == x)]); return m.length ? `<p><b>${k}</b> · ${m.join(', ')}</p>` : ''; }).join('');
-    stats.innerHTML = `<div class="sg">${card(`${n} / ${tot}`, `stanic · ${Math.round(n / tot * 100)} %`)}${card(num(d, 1) + ' km', 'ušlo se')}${card(d ? num(n / d, 1) : '–', 'stanic / km')}
-      ${card(STATIONS.filter((s, i) => s[3].length > 1 && V[i]).length + ' / 3', 'přestupů')}</div>
+    stats.innerHTML = `<div class="sg">${card(`${n} / ${tot}`, `stanic · ${Math.round(n / tot * 100)} %`)}${card(num(d, 1) + ' km', 'ušlo se')}${card(d ? num(n / d, 1) : '–', 'stanic / km')}</div>
       <div class="lh">Linky</div>${lines}<details><summary>Zbývá navštívit · ${tot - n}</summary>${left}</details>`;
     schema.innerHTML = schematic(V);
   }
