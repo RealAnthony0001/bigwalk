@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="cs">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Big Walk</title>
+<script>document.documentElement.dataset.theme = localStorage.getItem('theme') || 'dark'</script>
+<link rel="stylesheet" href="vendor/leaflet.css">
+<style>
+  /* look borrowed from czu-skripta: dark/light via data-theme, square corners, mono uppercase labels, red accent */
+  :root { --bg: #0a0707; --panel: #130e0e; --panel2: #1c1414; --line2: #7a6468; --text: #f6f0f0; --muted: #bdb0b0; --accent: #ff5c4d; --def: #62b6f5; --on: #000; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace }
+  [data-theme=light] { --bg: #f6f1f0; --panel: #fff; --panel2: #f1e8e7; --line2: #8f7a7a; --text: #1a1010; --muted: #5a4a4a; --accent: #b3201a; --def: #0b57a4; --on: #fff }
+  :root { color-scheme: dark }
+  [data-theme=light] { color-scheme: light }
+  * { box-sizing: border-box; border-radius: 0 }
+  html, body { height: 100%; margin: 0 }
+  body { display: flex; flex-direction: column; font: 16px/1.7 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text) }
+  a { color: var(--accent) }
+  .top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 12px; min-height: 48px; background: var(--panel); border-bottom: 1px solid var(--line2) }
+  .top h1 { flex: 1; margin: 0; font: 14px var(--mono); text-transform: uppercase; letter-spacing: .06em; white-space: nowrap }
+  .top .code { color: var(--accent); margin-left: 8px }
+  button, .btn { font: inherit; font-size: 13px; line-height: 1.7; cursor: pointer; border: 1px solid var(--line2); background: var(--panel2); color: var(--text); padding: 5px 9px; display: inline-block }
+  button:hover, .btn:hover { border-color: var(--accent); color: var(--accent) }
+  button.on { background: var(--accent); color: var(--on); border-color: var(--accent) }
+  .badge { font: 12px var(--mono); padding: 2px 8px; border: 1px solid var(--line2); color: var(--muted); text-transform: uppercase; letter-spacing: .05em }
+  .ro .edit { display: none !important }
+  .prog { height: 4px; background: var(--panel2) }
+  .prog i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s }
+  #stage { flex: 1; min-height: 0; position: relative; display: flex }
+  #area { flex: 1; min-width: 0; position: relative }
+  #walks { width: 300px; flex: none; overflow: auto; padding: 12px; background: var(--panel); border-right: 1px solid var(--line2) }
+  body.side-closed #walks { display: none }
+  .wt { display: flex; align-items: center; gap: 8px; margin-bottom: 10px }
+  .wt b { flex: 1; font: 12px var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--muted) }
+  .walk { border: 1px solid var(--line2); border-left: 5px solid var(--c); background: var(--panel2); padding: 8px 10px; margin-bottom: 8px; cursor: pointer }
+  .walk.cur { outline: 2px solid var(--accent) }
+  .walk.off { opacity: .5 }
+  .walk button { padding: 0 8px }
+  .wh { display: flex; gap: 6px; align-items: center }
+  .wh b { flex: 1; font-size: 14px; line-height: 1.3; overflow-wrap: anywhere }
+  .wm { margin: 2px 0 0; font: 12px/1.5 var(--mono); color: var(--muted) }
+  details .wm { text-transform: none; letter-spacing: 0 }
+  .walk input[type=date] { font: 12px var(--mono); color: var(--text); background: var(--panel); border: 1px solid var(--line2); padding: 0 4px; margin-right: 4px }
+  #map { position: absolute; inset: 0; background: var(--bg); font: inherit }
+  #wagon { position: absolute; inset: 0; z-index: 1200; overflow: auto; background: var(--bg); padding: 16px; display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; align-items: start }
+  #wagon[hidden] { display: none }
+  .sg { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px }
+  .stat { border: 1px solid var(--line2); background: var(--panel); padding: 8px 12px }
+  .stat b { display: block; font: 800 26px/1.2 var(--mono); color: var(--accent) }
+  .stat span, .lh { font: 12px var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--muted) }
+  .lh { margin: 14px 0 6px }
+  .ln { display: grid; grid-template-columns: 28px 1fr auto; gap: 4px 10px; align-items: center; margin-bottom: 8px; font: 13px var(--mono) }
+  .ln i { grid-row: span 2; display: grid; place-items: center; width: 28px; height: 28px; color: #111; font: 700 15px system-ui }
+  .ln .prog { grid-column: 2 / 4 }
+  .ln .prog i { display: block; width: auto; height: 100% }
+  details { font-size: 13px; color: var(--muted) }
+  summary { cursor: pointer; font: 12px var(--mono); text-transform: uppercase; letter-spacing: .06em }
+  .sch { border: 1px solid var(--line2); background: var(--panel); overflow: auto }
+  .sch svg { display: block; width: 100%; min-width: 900px; height: auto }
+  .sch path { fill: none; stroke-width: 11 }
+  .sch text { font: 12px system-ui; fill: var(--muted) }
+  .sch .v text, .sch .hub text { fill: var(--text); font-weight: 700 }
+  .stn { cursor: pointer }
+  @media (max-width: 860px) { #wagon { grid-template-columns: 1fr } #walks { position: absolute; z-index: 1100; top: 0; bottom: 0; left: 0; width: min(320px, 90%) } }
+  .leaflet-bar, .leaflet-bar a { border-color: var(--line2) !important }
+  .leaflet-bar a { background: var(--panel); color: var(--text) }
+  .leaflet-bar a:hover { background: var(--panel2); color: var(--accent) }
+  .leaflet-control-attribution { background: var(--panel) !important; color: var(--muted) !important }
+  .leaflet-control-attribution a { color: var(--accent) !important }
+  .leaflet-tooltip { background: var(--panel); color: var(--text); border: 1px solid var(--line2); box-shadow: none; font: 12px var(--mono); text-transform: uppercase; letter-spacing: .05em }
+  .leaflet-tooltip::before { display: none }
+  .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--panel); color: var(--text); border: 1px solid var(--line2); box-shadow: none }
+  .leaflet-popup-content { margin: 10px 12px; font-size: 13px; line-height: 1.5 }
+  .leaflet-popup-content button { margin-top: 6px }
+  a.leaflet-popup-close-button { color: var(--muted) }
+  .pin { width: 28px; height: 28px; font-size: 16px; line-height: 24px; text-align: center; border: 2px solid var(--panel); box-shadow: 0 0 0 1px var(--line2) }
+  .st { width: 14px; height: 14px; margin: 2px; border: 2px solid var(--panel); box-shadow: 0 0 0 1px var(--line2) }
+  .st.on { box-shadow: 0 0 0 2px var(--text); transform: scale(1.3) }
+</style>
+<header class="top">
+  <button id="bl">☰ Trasy</button>
+  <h1>🚇 Big Walk<span class="code" id="count"></span></h1>
+  <button class="edit" id="bm">📍 Sraz</button>
+  <button class="edit" id="bk">🥙 Kebab</button>
+  <button class="edit" id="be">🏁 Konec</button>
+  <button class="edit" id="bd">✏ Trasa</button>
+  <button class="edit" id="bu">↶ Zpět</button>
+  <label class="btn edit" title="Import GPX">📂 GPX<input type="file" id="gpx" accept=".gpx" hidden></label>
+  <button class="edit" id="bs">☁ Publikovat</button>
+  <span class="badge" id="msg" hidden></span>
+  <button id="bw">🚇 Mapa metra</button>
+  <button id="bt"></button>
+</header>
+<div id="stage">
+  <aside id="walks"></aside>
+  <div id="area">
+    <div id="map"></div>
+    <section id="wagon" hidden><div id="stats"></div><div class="sch" id="schema"></div></section>
+  </div>
+</div>
+<script src="vendor/leaflet.js"></script>
+<script src="vendor/protomaps-leaflet.js"></script>
+<script src="stations.js"></script>
+<script src="walk.js"></script>
+<script src="schema.js"></script>
+<script>
+  // Editing exists only on the local server (server.py); the hosted site is a view-only copy. /?view previews what viewers see.
+  const local = ['localhost', '127.0.0.1'].includes(location.hostname), ro = !local || location.search == '?view';
+  let W = [], active = null, pick, base, undo = [], last = []; // last = summarize() rows of the latest draw; // W = all walks; active = the one the edit buttons act on; undo = [walk id, path length] before each clicked waypoint
+  const hidden = new Set(JSON.parse(localStorage.getItem('bigwalk-hidden') || '[]')), open = new Set(); // hidden walks are a per-browser view setting
+  if (innerWidth < 860) document.body.classList.add('side-closed');
+  document.body.classList.toggle('ro', ro);
+
+  // The map library reads prague.pmtiles with HTTP Range requests, which many servers (python http.server) ignore.
+  // So download the file once and answer its Range requests ourselves; works on any server and offline.
+  const MAP = 'prague.pmtiles', realFetch = fetch, whole = realFetch(MAP).then(r => r.blob());
+  // The offline copy (sw.js) is for the hosted site. On localhost it would keep showing a stale page after the server is stopped, so drop it there.
+  if (local) { navigator.serviceWorker?.getRegistrations().then(rs => rs.forEach(r => r.unregister())); caches?.keys().then(ks => ks.forEach(k => caches.delete(k))); }
+  else whole.then(() => navigator.serviceWorker?.register('sw.js')); // after the download, so the worker's precache comes from the HTTP cache, not a second download
+  whole.catch(e => say(location.protocol == 'file:' ? 'Mapa se nenačetla: spusť přes start.command, ne dvojklikem na index.html' : 'Mapa se nenačetla: ' + e.message));
+  fetch = async (u, o) => {
+    const m = /bytes=(\d+)-(\d+)/.exec(new Headers(o?.headers).get('range') || '');
+    if (!m || !String(u).endsWith(MAP)) return realFetch(u, o);
+    const b = await whole, a = +m[1], e = Math.min(+m[2], b.size - 1);
+    return new Response(b.slice(a, e + 1), { status: 206, headers: { 'Content-Range': `bytes ${a}-${e}/${b.size}`, 'Content-Length': e - a + 1 } });
+  };
+
+  const map = L.map('map', { maxZoom: 19 }).setView([50.0755, 14.4378], 12);
+  Object.values(LINES).forEach(l => L.polyline(l.w, { color: l.c, weight: 5, opacity: .6, interactive: false }).addTo(map));
+  const layer = L.layerGroup().addTo(map);
+
+  // Vector map of Prague only (OSM data, see README to regenerate); service worker keeps it offline
+  const setTheme = t => {
+    document.documentElement.dataset.theme = t; localStorage.setItem('theme', t);
+    bt.textContent = t == 'dark' ? '☀ Světlý' : '☾ Tmavý';
+    base?.remove(); base = protomapsL.leafletLayer({ url: MAP, flavor: t, maxDataZoom: 15 }).addTo(map);
+  };
+  bt.onclick = () => setTheme(document.documentElement.dataset.theme == 'dark' ? 'light' : 'dark');
+  bl.onclick = () => { document.body.classList.toggle('side-closed'); map.invalidateSize(); };
+
+  let timer; // saves go to data/walks.json on disk through server.py
+  const put = () => fetch('data/walks.json', { method: 'PUT', body: pack(W) }).then(r => r.ok || say('Uložení selhalo: ' + r.status), () => say('Uložení selhalo: server neběží'));
+  const save = () => { if (!ro) { clearTimeout(timer); timer = setTimeout(put, 400); } };
+  const say = t => { msg.textContent = t; msg.hidden = !t; };
+
+  const PAL = ['#3b82f6', '#8b5cf6', '#06b6d4', '#d946ef', '#ec4899', '#6366f1', '#14b8a6']; // no green/yellow/red: those are the metro lines
+  const col = w => PAL[w.id % PAL.length];
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const num = (x, d) => x.toLocaleString('cs', { minimumFractionDigits: d, maximumFractionDigits: d }); // Czech decimal comma
+  const order = () => W.sort((a, b) => (a.date || '').localeCompare(b.date || '') || a.id - b.id); // oldest first: "new stations" counts follow this order
+  const newWalk = name => { const w = { id: Math.max(0, ...W.map(w => w.id)) + 1, name: name || 'Trasa ' + (W.length + 1), date: new Date().toISOString().slice(0, 10), m: null, k: null, e: null, p: [] }; W.push(w); order(); active = w.id; return w; };
+  const cur = () => W.find(w => w.id == active) || newWalk();
+
+  function draw() {
+    layer.clearLayers();
+    const { rows, V } = summarize(W, STATIONS), n = V.filter(Boolean).length;
+    last = rows;
+    STATIONS.forEach((s, i) => {
+      const v = V[i];
+      const cs = [...s[3]].map(k => v ? LINES[k].c : `color-mix(in srgb, ${LINES[k].c} 35%, #fff)`); // unvisited = washed out toward white
+      const bg = cs.length > 1 ? `linear-gradient(90deg, ${cs[0]} 50%, ${cs[1]} 0)` : cs[0]; // transfer station = split square
+      L.marker([s[1], s[2]], { icon: L.divIcon({ html: `<div class="st ${v ? 'on' : ''}" style="background:${bg}"></div>`, className: '', iconSize: [18, 18] }) }).bindTooltip(s[0]).on('click', e => pick ? map.fire('click', e) : L.popup().setLatLng(e.latlng).setContent(stationInfo(i)).openOn(map)).addTo(layer); // while placing/drawing a click snaps to the station, otherwise it opens its info
+    });
+    W.forEach((w, i) => {
+      if (hidden.has(w.id)) return;
+      const c = col(w);
+      rows[i].P.forEach(q => L.polyline(q, { color: c, weight: w.id == active ? 5 : 3, opacity: .9, interactive: false }).addTo(layer));
+      [['m', '📍', 'sraz'], ['k', '🥙', 'kebab'], ['e', '🏁', 'konec']].forEach(([k, e, t]) => w[k] &&
+        L.marker(w[k], { title: `${w.name}: ${t}`, draggable: !ro, icon: L.divIcon({ html: `<div class="pin" style="background:${c}">${e}</div>`, className: '', iconSize: [28, 28] }) })
+          .on('dragend', ev => { const l = ev.target.getLatLng(); w[k] = [l.lat, l.lng]; save(); }).addTo(layer));
+    });
+    count.textContent = `${n} / ${STATIONS.length} stanic`;
+    side(rows); panel(V, rows, n);
+  }
+
+  // Station popup: which walks visited it; editors can mark it (or unmark it) by hand for the highlighted walk
+  function stationInfo(i) {
+    const s = STATIONS[i], el = document.createElement('div'), t = W.find(w => w.id == active);
+    const by = W.flatMap((w, j) => last[j].V[i] ? [esc(w.name) + (last[j].M[i] ? ' (ručně)' : '')] : []);
+    el.innerHTML = `<b>${esc(s[0])}</b> · ${[...s[3]].join(' ')}<br>${by.length ? 'Navštívena: ' + by.join(', ') : 'Zatím nenavštívena'}`;
+    const hand = t?.s?.includes(s[0]);
+    if (!ro && (hand || !last[W.indexOf(t)]?.V[i])) {
+      const b = el.appendChild(document.createElement('button'));
+      b.textContent = hand ? 'Zrušit ruční označení' : `✓ Označit jako navštívenou${t ? ' · ' + t.name : ''}`;
+      b.onclick = () => { const w = cur(); w.s = hand ? w.s.filter(x => x != s[0]) : [...new Set([...(w.s || []), s[0]])]; map.closePopup(); save(); draw(); };
+    }
+    return el;
+  }
+  const places = w => [['sraz', w.m], ['kebab', w.k], ['konec', w.e]].filter(p => p[1]); // the walk's places in order, straight-line distances between neighbours are shown
+
+  // Sidebar: one card per walk with its distance, stations and a switch to hide it on the map
+  function side(rows) {
+    walks.innerHTML = `<div class="wt"><b>Trasy · ${W.length}</b><button class="edit" data-act="new">+ Nová</button></div>${W.length ? '' : '<p class="wm">Zatím žádná trasa.</p>'}` + W.map((w, i) => {
+      const r = rows[i], off = hidden.has(w.id), names = STATIONS.flatMap((s, j) => r.V[j] ? [s[0] + (r.M[j] ? ' (ručně)' : '')] : []).join(', ');
+      return `<div class="walk${w.id == active ? ' cur' : ''}${off ? ' off' : ''}" data-id="${w.id}" style="--c:${col(w)}">
+        <div class="wh"><b>${esc(w.name)}</b><button data-act="hide" title="${off ? 'Zobrazit' : 'Skrýt'} na mapě">${off ? '🚫' : '👁'}</button><button class="edit" data-act="ren" title="Přejmenovat">✎</button><button class="edit" data-act="del" title="Smazat trasu">🗑</button></div>
+        <div class="wm">${ro ? (w.date ? new Date(w.date + 'T12:00').toLocaleDateString('cs') + ' · ' : '') : `<input type="date" data-act="date" value="${w.date || ''}" title="Datum trasy"> `}${num(r.km, 1)} km · ${r.n} stanic${r.fresh ? ` (+${r.fresh} nových)` : ''}</div>
+        <details data-id="${w.id}"${open.has(w.id) ? ' open' : ''}><summary>Stanice</summary><p class="wm">${esc(names) || '–'}${places(w).map((p, j, a) => j ? `<br>${a[j - 1][0]} → ${p[0]} ${num(dist(a[j - 1][1], p[1]) / 1000, 2)} km` : '').join('')}</p></details></div>`;
+    }).join('');
+  }
+  walks.addEventListener('toggle', e => { const id = +e.target.dataset.id; e.target.open ? open.add(id) : open.delete(id); }, true); // keep cards open across redraws
+  walks.onchange = e => { // date field
+    const w = W.find(w => w.id == e.target.closest('.walk')?.dataset.id);
+    if (e.target.dataset.act != 'date' || !w || !e.target.value) return;
+    w.date = e.target.value; order(); save(); draw();
+  };
+  walks.onclick = e => {
+    if (e.target.closest('input')) return; // do not redraw under an open date picker
+    const act = e.target.closest('[data-act]')?.dataset.act, w = W.find(w => w.id == e.target.closest('.walk')?.dataset.id);
+    if (act == 'new') { const name = prompt('Název trasy:', 'Trasa ' + (W.length + 1)); if (!name) return; newWalk(name); mode('d'); save(); } // a new walk starts in drawing mode
+    else if (!w || e.target.closest('details')) return;
+    else if (act == 'hide') { hidden.has(w.id) ? hidden.delete(w.id) : hidden.add(w.id); localStorage.setItem('bigwalk-hidden', JSON.stringify([...hidden])); }
+    else if (act == 'del') { if (!confirm(`Smazat trasu „${w.name}“?`)) return; W = W.filter(x => x != w); if (active == w.id) active = W.at(-1)?.id ?? null; save(); }
+    else if (act == 'ren') {
+      const name = prompt('Název trasy:', w.name); if (!name) return;
+      w.name = name; save();
+    } else { active = w.id; if (!hidden.has(w.id) && w.p.length > 1) map.fitBounds(w.p); } // select it and zoom to it
+    draw();
+  };
+
+  // Metro-map panel: statistics over all walks + schematic
+  function panel(V, rows, n) {
+    const d = rows.reduce((s, r) => s + r.km, 0), tot = STATIONS.length, card = (b, t) => `<div class="stat"><b>${b}</b><span>${t}</span></div>`;
+    const lines = Object.keys(LINES).map(k => {
+      const ix = STATIONS.flatMap((s, i) => s[3].includes(k) ? [i] : []), v = ix.filter(i => V[i]).length;
+      return `<div class="ln"><i style="background:${LINES[k].c}">${k}</i><span>${v} / ${ix.length}${v == ix.length ? ' ✓' : ''}</span><span>${Math.round(v / ix.length * 100)}%</span><div class="prog"><i style="width:${v / ix.length * 100}%;background:${LINES[k].c}"></i></div></div>`;
+    }).join('');
+    const left = Object.keys(LINES).map(k => { const m = LINES[k].s.filter(x => !V[STATIONS.findIndex(s => s[0] == x)]); return m.length ? `<p><b>${k}</b> · ${m.join(', ')}</p>` : ''; }).join('');
+    stats.innerHTML = `<div class="sg">${card(`${n} / ${tot}`, `stanic · ${Math.round(n / tot * 100)} %`)}${card(num(d, 1) + ' km', 'ušlo se')}${card(d ? num(n / d, 1) : '–', 'stanic / km')}
+      ${card(STATIONS.filter((s, i) => s[3].length > 1 && V[i]).length + ' / 3', 'přestupů')}</div>
+      <div class="lh">Linky</div>${lines}<details><summary>Zbývá navštívit · ${tot - n}</summary>${left}</details>`;
+    schema.innerHTML = schematic(V);
+  }
+  bw.onclick = () => { wagon.hidden = !wagon.hidden; bw.classList.toggle('on', !wagon.hidden); };
+  schema.onclick = e => { const i = e.target.closest('[data-i]')?.dataset.i; if (i == null) return; bw.click(); map.setView([STATIONS[i][1], STATIONS[i][2]], 16); }; // jump to the station on the map
+  onkeydown = e => e.key == 'Escape' && (pick ? mode() : !wagon.hidden && bw.click());
+
+  // Editing: the buttons act on the active walk (a first walk is created when there is none)
+  // m = meet, k = kebab, e = end: one click places it. d = draw: every click adds a waypoint to the route until you leave the mode.
+  const mode = k => {
+    pick = k;
+    Object.entries({ m: bm, k: bk, e: be, d: bd }).forEach(([x, b]) => b.classList.toggle('on', x == k));
+    map.getContainer().style.cursor = k ? 'crosshair' : '';
+    say(k == 'd' ? 'Klikej body trasy do mapy, Esc nebo ✏ ukončí' : k ? 'Klikni do mapy' : '');
+  };
+  bm.onclick = () => mode(pick == 'm' ? undefined : 'm');
+  bk.onclick = () => mode(pick == 'k' ? undefined : 'k');
+  be.onclick = () => mode(pick == 'e' ? undefined : 'e');
+  bd.onclick = () => mode(pick == 'd' ? undefined : 'd');
+  bu.onclick = () => { const [id, n] = undo.pop() || []; const w = W.find(w => w.id == id); if (w) { w.p.length = n; save(); draw(); } }; // takes back the last clicked waypoint
+  map.on('click', e => {
+    if (!pick) return;
+    const w = cur(), q = [e.latlng.lat, e.latlng.lng];
+    if (pick == 'd') { undo.push([w.id, w.p.length]); extend(w.p, q); } else { w[pick] = q; mode(); }
+    save(); draw();
+  });
+
+  gpx.onchange = async () => {
+    const pts = [...new DOMParser().parseFromString(await gpx.files[0].text(), 'application/xml').getElementsByTagName('trkpt')];
+    gpx.value = '';
+    if (!pts.length) return alert('V souboru nejsou žádné body trasy');
+    const w = cur(); undo = [];
+    if (!w.p.length) { w.date = pts[0].getElementsByTagName('time')[0]?.textContent.slice(0, 10) || w.date; order(); } // an empty walk takes the date of the recording
+    pts.forEach(n => add(w.p, [+n.getAttribute('lat'), +n.getAttribute('lon')]));
+    save(); draw(); if (w.p.length > 1) map.fitBounds(w.p);
+  };
+
+  bs.onclick = async () => {
+    say('Publikuji…'); clearTimeout(timer); await put();
+    const r = await fetch('publish', { method: 'POST' });
+    say(r.ok ? 'Publikováno, na webu bude za chvíli' : 'Publikování selhalo: ' + (await r.text()).slice(0, 200));
+  };
+
+  (async () => {
+    setTheme(document.documentElement.dataset.theme);
+    try {
+      const r = await fetch('data/walks.json', { cache: 'no-cache' }); // the saved walks (locally) or the published ones (online)
+      if (r.ok) W = unpack(await r.text());
+      order(); active = W.at(-1)?.id ?? null;
+      draw();
+      const all = W.filter(w => !hidden.has(w.id)).flatMap(w => w.p);
+      if (all.length > 1) map.fitBounds(all);
+    } catch (e) { alert('Trasy nelze načíst: ' + e.message); }
+  })();
+</script>
