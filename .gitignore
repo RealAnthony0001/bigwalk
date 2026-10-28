@@ -1,3 +1,4 @@
 __pycache__/
-data/walk.json.tmp
+data/walks.json.tmp
+data/walks.json.bak
 .DS_Store

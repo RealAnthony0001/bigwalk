@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Local editor: serves this folder on http://localhost:8000, saves the walks to data/walks.json and publishes it with git push.
+"""Local editor: serves this folder on http://localhost:8000, saves the walks to data/walks.json.
 Listens on 127.0.0.1 only and checks Host/Origin, so other websites open in your browser cannot write to it."""
-import http.server, json, os, subprocess, sys
+import http.server, json, os, shutil, sys
+from urllib.parse import unquote
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DATA = 'data/walks.json'
@@ -15,9 +16,23 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_header('Cache-Control', 'no-cache')  # always see the file you just saved
         super().end_headers()
 
+    def hosts(self):
+        return {f'localhost:{self.server.server_port}', f'127.0.0.1:{self.server.server_port}'}
+
     def allowed(self):
-        hosts = {f'localhost:{self.server.server_port}', f'127.0.0.1:{self.server.server_port}'}
-        return self.headers.get('Host') in hosts and self.headers.get('Origin') in {'http://' + h for h in hosts}
+        return self.headers.get('Host') in self.hosts() and self.headers.get('Origin') in {'http://' + h for h in self.hosts()}
+
+    def blocked(self):  # reads need the right Host too (DNS rebinding), and the git folder is never served
+        if self.headers.get('Host') in self.hosts() and '.git' not in unquote(self.path.split('?')[0]).split('/'):
+            return False
+        self.reply(403, 'forbidden')
+        return True
+
+    def do_GET(self):
+        self.blocked() or super().do_GET()
+
+    def do_HEAD(self):
+        self.blocked() or super().do_HEAD()
 
     def reply(self, code, text=''):
         body = text.encode()
@@ -29,7 +44,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def do_PUT(self):
         if not self.allowed() or self.path.split('?')[0] != '/' + DATA:
             return self.reply(403, 'forbidden')
-        n = int(self.headers.get('Content-Length') or 0)
+        n = self.headers.get('Content-Length', '')
+        if not n.isdigit():
+            return self.reply(400, 'no length')
+        n = int(n)
         if n > 2_000_000:
             return self.reply(413, 'too big')
         body = self.rfile.read(n)
@@ -41,20 +59,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         tmp = os.path.join(ROOT, DATA + '.tmp')
         with open(tmp, 'wb') as f:
             f.write(body)
-        os.replace(tmp, os.path.join(ROOT, DATA))
+        live = os.path.join(ROOT, DATA)
+        if os.path.exists(live):
+            shutil.copyfile(live, live + '.bak')  # shortcut: keeps only the previous version, enough to undo one bad save
+        os.replace(tmp, live)
         self.reply(204)
-
-    def do_POST(self):
-        if not self.allowed() or self.path != '/publish':
-            return self.reply(403, 'forbidden')
-        git = lambda *a: subprocess.run(['git', *a], cwd=ROOT, capture_output=True, text=True, timeout=120, env={**os.environ, 'GIT_TERMINAL_PROMPT': '0'})
-        try:
-            git('add', DATA)
-            git('commit', '-m', 'Big Walk: aktualizace trasy', '--', DATA)  # "nothing to commit" is fine, push may still have work
-            p = git('push')
-        except subprocess.TimeoutExpired:
-            return self.reply(504, 'git push trvá moc dlouho')
-        self.reply(200 if p.returncode == 0 else 500, (p.stderr or p.stdout).strip())
 
 
 if __name__ == '__main__':
